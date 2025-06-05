@@ -47,6 +47,7 @@ const sunMaterial = new THREE.MeshBasicMaterial({
   transparent: true,
   opacity: 0.9,
 });
+
 const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
 sunMesh.castShadow = false;
 scene.add(sunMesh);
@@ -67,7 +68,7 @@ sunGlow.position.copy(sunMesh.position);
 scene.add(sunGlow);
 
 // --- Sun Light ---
-const sunLight = new THREE.PointLight(0xffcc00, 1.5, 10, 2);
+const sunLight = new THREE.PointLight(0xffcc00, 10, 10, 2);
 sunLight.position.copy(sunMesh.position);
 scene.add(sunLight);
 
@@ -132,7 +133,7 @@ let uniforms = {
   uTexture: { value: texture },
   uDisp: { value: disp },
   uNightTexture: { value: nightTexture },
-  uLightPos: { value: new THREE.Vector3(0, 0, 1).normalize() },
+  uLightPos: { value: new THREE.Vector3(0, 0, 0) },
   uTime: { value: 0.0 },
   uMouse: { value: new THREE.Vector2(0.5, 0.5) },
   uResolution: {
@@ -140,9 +141,7 @@ let uniforms = {
   },
 };
 
-uniforms.uLightPos.value.set(1, 0, 0).normalize(); // sun from the side
 uniforms.uSunPos = { value: sunMesh.position.clone() };
-
 
 let material = new THREE.ShaderMaterial({
   uniforms: uniforms,
@@ -163,51 +162,52 @@ let material = new THREE.ShaderMaterial({
  `,
   fragmentShader: `
     uniform sampler2D uTexture;
-uniform sampler2D uDisp;
-uniform sampler2D uNightTexture;
-uniform vec3 uLightPos;
-uniform float uTime;
-uniform vec2 uMouse;
-uniform vec2 uResolution;
-uniform vec3 uSunPos;
+    uniform sampler2D uDisp;
+    uniform sampler2D uNightTexture;
+    uniform vec3 uLightPos;
+    uniform float uTime;
+    uniform vec2 uMouse;
+    uniform vec2 uResolution;
+    uniform vec3 uSunPos;
 
 
-varying vec3 vNormal;
-varying vec3 vWorldPos;
-varying vec2 vUv;
+    varying vec3 vNormal;
+    varying vec3 vWorldPos;
+    varying vec2 vUv;
 
 
-void main() {
-vec3 lightDir = normalize(uLightPos); // if you set uLightPos as a direction
-float facing = step(0.0, dot(vNormal, lightDir));
-float diff = max(dot(vNormal, lightDir), 0.0);
-diff = pow(diff, 10.0); // or 3.0
-    float disp = texture2D(uDisp, vUv).r;
-    diff *= 0.5 + 0.1 * disp;
+    void main() {
+        vec3 lightDir = normalize(uLightPos); // if you set uLightPos as a direction
+        float diff = max(dot(vNormal, lightDir), 0.5);
 
-    vec3 dayColor = texture2D(uTexture, vUv).rgb;
-    vec3 nightTex = texture2D(uNightTexture, vUv).rgb;
-    vec3 nightColor = vec3(1.0, 0.85, 0.2) * nightTex; // yellowish tint
+        float facing = step(0.0, dot(vNormal, lightDir));
+        diff = pow(diff, 10.0); // or 3.0
+        float disp = texture2D(uDisp, vUv).r;
+        diff *= 0.5 + 0.1 * disp;
 
-    float dist = length(uSunPos - vWorldPos);
-float distanceAttenuation = 1.0 / (1.0 + dist * dist); // basic quadratic falloff
+        vec3 dayColor = texture2D(uTexture, vUv).rgb;
+        vec3 nightTex = texture2D(uNightTexture, vUv).rgb;
+        vec3 nightColor = vec3(1.0, 0.85, 0.2) * nightTex; // yellowish tint
 
-float lightFactor = smoothstep(0.15, 0.5, diff); // fade in from 0.15 to 0.5 dot product
-lightFactor *= distanceAttenuation;
+        float dist = length(uSunPos - vWorldPos);
+        float distanceAttenuation = 1.0 / (1.0 + dist * dist); // basic quadratic falloff
 
-    // --- Mouse-based night light fade ---
-    vec2 mouseUV = uMouse; // already normalized 0–1
-    vec2 delta = abs(vUv - mouseUV);
-    delta.x = min(delta.x, 1.0 - delta.x); // wrap UV horizontally
-    float distToMouse = length(delta);
+        float lightFactor = smoothstep(0.15, 0.5, diff); // fade in from 0.15 to 0.5 dot product
+        lightFactor *= distanceAttenuation;
 
-    float mouseInfluence = smoothstep(0.3, 0.0, distToMouse); // closer = stronger fade
-    float nightFade = clamp(1.0 - lightFactor - mouseInfluence, 0.0, 1.0);
+        // --- Mouse-based night light fade ---
+        vec2 mouseUV = uMouse; // already normalized 0–1
+        vec2 delta = abs(vUv - mouseUV);
+        delta.x = min(delta.x, 1.0 - delta.x); // wrap UV horizontally
+        float distToMouse = length(delta);
 
-    vec3 finalColor = mix(dayColor, nightColor, nightFade);
+        float mouseInfluence = smoothstep(0.3, 0.0, distToMouse); // closer = stronger fade
+        float nightFade = clamp(1.0 - lightFactor - mouseInfluence, 0.0, 1.0);
 
-    gl_FragColor = vec4(finalColor, 1.0);
-}
+        vec3 finalColor = mix(dayColor, nightColor, nightFade);
+
+        gl_FragColor = vec4(finalColor, 1.0);
+    }
   `,
   lights: false,
 });
